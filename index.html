@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BATCHFORGE — Native Image Editor</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div class="wrapper">
+
+<header>
+  <div>
+    <div class="logo">BATCH<span>FORGE</span></div>
+    <div style="margin-top:3px;font-size:11px;letter-spacing:2px;opacity:0.35;text-transform:uppercase;">Visual Batch Image Processor</div>
+  </div>
+  <div class="tagline">Zero Dependencies · 100% Offline</div>
+</header>
+
+<div id="stats-bar">
+  <span>Queue: <strong id="stat-count">0</strong> files</span>
+  <span>Processed: <strong id="stat-done">0</strong></span>
+  <span>Format: <strong id="stat-fmt">—</strong></span>
+</div>
+
+<div class="app-grid">
+
+  <!-- ── LEFT: QUEUE + LOGO OVERLAY ── -->
+  <div class="queue-col">
+    <div class="card">
+      <div class="card-header"><span class="dot"></span>DROP ZONE</div>
+      <div class="card-body" style="padding:9px;">
+        <div id="drop-zone">
+          <input type="file" id="file-input" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.bmp,image/*">
+          <span class="drop-icon">⬡</span>
+          <div class="drop-title">Drop Images Here</div>
+          <div class="drop-sub">PNG · JPG · WEBP · GIF · BMP</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="dot"></span>INPUT QUEUE
+        <span id="count-badge" class="file-count-badge" style="display:none">0</span>
+      </div>
+      <div class="card-body" style="padding:9px;">
+        <div id="image-queue">
+          <div class="empty-state" id="empty-msg">No images loaded</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGO OVERLAY CARD — lives in left column on desktop -->
+    <div class="card logo-overlay-card">
+      <div class="card-header"><span class="dot"></span>LOGO OVERLAY</div>
+      <div class="card-body">
+
+        <div id="logo-drop-zone" class="logo-drop">
+          <input type="file" id="logo-file-input" accept=".png,.jpg,.jpeg,.webp,.gif,.svg,image/*">
+          <span class="logo-drop-icon">🖼</span>
+          <div class="logo-drop-text">Drop logo / watermark here<br><span style="opacity:0.5;font-size:10px;">PNG with transparency recommended</span></div>
+        </div>
+
+        <div id="logo-preview-wrap" class="logo-preview-wrap" style="display:none;">
+          <img id="logo-preview-img" class="logo-preview-img" alt="logo">
+          <span id="logo-preview-name" class="logo-preview-name">logo.png</span>
+          <button class="logo-remove-btn" onclick="removeLogo()">✕</button>
+        </div>
+
+        <div id="logo-controls" style="display:none;">
+          <div class="control-group" style="margin-bottom:9px;">
+            <div class="section-label" style="margin-bottom:7px;">Position</div>
+            <div class="pos-grid" id="pos-grid">
+              <div class="pos-cell" data-pos="top-left"   onclick="setLogoPos('top-left')">↖</div>
+              <div class="pos-cell" data-pos="top-center" onclick="setLogoPos('top-center')">↑</div>
+              <div class="pos-cell" data-pos="top-right"  onclick="setLogoPos('top-right')">↗</div>
+              <div class="pos-cell" data-pos="mid-left"   onclick="setLogoPos('mid-left')">←</div>
+              <div class="pos-cell" data-pos="center"     onclick="setLogoPos('center')">·</div>
+              <div class="pos-cell" data-pos="mid-right"  onclick="setLogoPos('mid-right')">→</div>
+              <div class="pos-cell" data-pos="bot-left"   onclick="setLogoPos('bot-left')">↙</div>
+              <div class="pos-cell" data-pos="bot-center" onclick="setLogoPos('bot-center')">↓</div>
+              <div class="pos-cell active" data-pos="bot-right" onclick="setLogoPos('bot-right')">↘</div>
+            </div>
+          </div>
+
+          <label>Size <span style="opacity:0.4;font-size:10px;font-weight:400">of short edge</span></label>
+          <div class="range-row" style="margin-bottom:12px;">
+            <input type="range" id="logo-size" min="2" max="80" value="20"
+              oninput="logoState.size=+this.value; syncRange(this); syncNum('logo-size','logo-size-num'); schedulePreview();">
+            <input type="number" class="range-num" id="logo-size-num" value="20" min="2" max="80"
+              oninput="logoState.size=clampVal(+this.value,2,80); syncRangeFromNum('logo-size','logo-size-num'); schedulePreview();">
+          </div>
+
+          <label>Opacity</label>
+          <div class="range-row">
+            <input type="range" id="logo-opacity" min="5" max="100" value="80"
+              oninput="logoState.opacity=+this.value; syncRange(this); syncNum('logo-opacity','logo-opacity-num'); schedulePreview();">
+            <input type="number" class="range-num" id="logo-opacity-num" value="80" min="5" max="100"
+              oninput="logoState.opacity=clampVal(+this.value,5,100); syncRangeFromNum('logo-opacity','logo-opacity-num'); schedulePreview();">
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CENTER: WORKING AREA ── -->
+  <div class="working-col">
+    <div class="card wa-card">
+      <div class="card-header">
+        <span class="dot"></span>WORKING AREA
+        <span id="preview-filename" style="opacity:0.45;font-size:10px;margin-left:auto;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">No image selected</span>
+      </div>
+      <div class="card-body">
+        <div class="wa-toolbar">
+          <div class="tb-group">
+            <button class="tb-btn" onclick="applyFlip('h')">⇆ Flip H</button>
+            <button class="tb-btn" onclick="applyFlip('v')">⇅ Flip V</button>
+          </div>
+          <div class="tb-sep"></div>
+          <div class="tb-group">
+            <button class="tb-btn" onclick="applyRotate(90)">↻ 90°</button>
+            <button class="tb-btn" onclick="applyRotate(180)">↻ 180°</button>
+            <button class="tb-btn" onclick="applyRotate(270)">↺ 270°</button>
+          </div>
+          <div class="tb-sep"></div>
+          <button class="tb-btn" onclick="resetTransforms()">✕ Reset</button>
+          <div class="transform-state" id="transform-state" style="margin-left:auto;"></div>
+        </div>
+
+        <div class="canvas-wrap" id="canvas-wrap" tabindex="0">
+          <canvas id="preview-canvas"></canvas>
+          <div class="canvas-placeholder" id="canvas-placeholder">
+            <span class="ph-icon">⬡</span>
+            <div class="ph-title">Click an image to begin editing</div>
+            <div class="ph-body">Select any file from the queue on the left<br>to open it here and preview your changes.</div>
+            <div class="ph-hint">
+              All edits render live in real-time<br>
+              Enable <strong>Crop</strong> → drag the box to reposition,<br>
+              drag its handles to resize, or use <strong>Arrow Keys</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="crop-pos-bar" id="crop-pos-bar">
+          <div class="pos-field"><label>X</label><span class="pos-num" id="crop-x-disp">0</span><span style="font-size:9px;opacity:0.4">px</span></div>
+          <div class="pos-field"><label>Y</label><span class="pos-num" id="crop-y-disp">0</span><span style="font-size:9px;opacity:0.4">px</span></div>
+          <div class="pos-field"><label>W</label><span class="pos-num" id="crop-w-disp">—</span></div>
+          <div class="pos-field"><label>H</label><span class="pos-num" id="crop-h-disp">—</span></div>
+          <span class="crop-hint">Drag interior=move · Drag handles=resize · Arrow keys (Shift×10)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: CONTROLS ── -->
+  <div class="controls-col">
+    <div class="card">
+      <div class="card-header"><span class="dot"></span>TRANSFORMATIONS</div>
+      <div class="card-body">
+
+        <!-- RESIZE -->
+        <div class="control-group">
+          <div class="section-label">Resize</div>
+          <div class="mode-group">
+            <button class="mode-btn active" id="mode-scale" onclick="setResizeMode('scale')">Scale %</button>
+            <button class="mode-btn" id="mode-pixel" onclick="setResizeMode('pixel')">Pixels</button>
+          </div>
+          <div id="field-scale" class="resize-fields active">
+            <label>Scale</label>
+            <div class="range-row">
+              <input type="range" id="resize-scale" min="1" max="200" value="100"
+                oninput="syncRange(this); syncNum('resize-scale','resize-scale-num'); scheduleEst();">
+              <input type="number" class="range-num" id="resize-scale-num" value="100" min="1" max="200"
+                oninput="syncRangeFromNum('resize-scale','resize-scale-num'); scheduleEst();">
+            </div>
+          </div>
+          <div id="field-pixel" class="resize-fields">
+            <div class="input-row">
+              <div><label>W px</label><input type="number" id="resize-w" placeholder="800" min="1" oninput="scheduleEst()"></div>
+              <div><label>H px</label><input type="number" id="resize-h" placeholder="600" min="1" oninput="scheduleEst()"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- CROP -->
+        <div class="control-group">
+          <div class="section-label">Crop</div>
+          <div class="toggle-row" onclick="toggleCheck('crop-toggle')">
+            <label for="crop-toggle">Enable Crop Box</label>
+            <div class="toggle"><input type="checkbox" id="crop-toggle" onchange="onCropToggle()"><span class="toggle-slider"></span></div>
+          </div>
+          <div id="crop-fields" style="margin-top:9px;display:none;">
+            <div class="input-row">
+              <div><label>W px</label><input type="number" id="crop-w" placeholder="400" min="1" oninput="onCropDimChange(); scheduleEst()"></div>
+              <div><label>H px</label><input type="number" id="crop-h" placeholder="400" min="1" oninput="onCropDimChange(); scheduleEst()"></div>
+            </div>
+            <div class="crop-xy-row">
+              <div class="crop-xy-field"><label>POS X</label><div class="crop-xy-val" id="ctrl-x-disp">0 px</div></div>
+              <div class="crop-xy-field"><label>POS Y</label><div class="crop-xy-val" id="ctrl-y-disp">0 px</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- COLOR -->
+        <div class="control-group">
+          <div class="section-label">Color</div>
+          <div class="toggle-row" style="margin-bottom:12px;" onclick="toggleCheck('grayscale-toggle')">
+            <label for="grayscale-toggle">Grayscale</label>
+            <div class="toggle"><input type="checkbox" id="grayscale-toggle" onchange="schedulePreview()"><span class="toggle-slider"></span></div>
+          </div>
+
+          <label>Brightness</label>
+          <div class="range-row" style="margin-bottom:13px;">
+            <input type="range" id="brightness" min="0" max="300" value="100"
+              oninput="syncRange(this); syncNum('brightness','brightness-num'); schedulePreview();">
+            <input type="number" class="range-num" id="brightness-num" value="100" min="0" max="300"
+              oninput="syncRangeFromNum('brightness','brightness-num'); schedulePreview();">
+          </div>
+
+          <label>Contrast</label>
+          <div class="range-row">
+            <input type="range" id="contrast" min="0" max="300" value="100"
+              oninput="syncRange(this); syncNum('contrast','contrast-num'); schedulePreview();">
+            <input type="number" class="range-num" id="contrast-num" value="100" min="0" max="300"
+              oninput="syncRangeFromNum('contrast','contrast-num'); schedulePreview();">
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- EXPORT -->
+        <div class="control-group">
+          <div class="section-label">Export</div>
+          <div style="margin-bottom:10px;">
+            <label>Format</label>
+            <select id="export-format" onchange="updateStatFmt(); scheduleEst()">
+              <option value="image/png">PNG</option>
+              <option value="image/jpeg">JPEG</option>
+              <option value="image/webp" selected>WebP</option>
+            </select>
+          </div>
+          <div>
+            <label>Quality</label>
+            <div class="range-row">
+              <input type="range" id="export-quality" min="1" max="100" value="90"
+                oninput="syncRange(this); syncNum('export-quality','export-quality-num'); scheduleEst();">
+              <input type="number" class="range-num" id="export-quality-num" value="90" min="1" max="100"
+                oninput="syncRangeFromNum('export-quality','export-quality-num'); scheduleEst();">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <button id="process-btn" onclick="processAll()" disabled>▶ PROCESS &amp; DOWNLOAD</button>
+    <button id="clear-btn" onclick="clearAll()">✕ Clear Queue</button>
+
+    <div id="progress-wrap">
+      <div class="progress-label">
+        <span>PROCESSING</span><span id="progress-text">0 / 0</span>
+      </div>
+      <div class="progress-bar-bg"><div id="progress-bar"></div></div>
+    </div>
+  </div>
+
+</div><!-- end app-grid -->
+</div><!-- end wrapper -->
+
+<script src="script.js"></script>
+</body>
+</html>
